@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Filter, Download, Eye, Trash2, ChevronLeft, ChevronRight, 
   Code2, FileText, Briefcase, MessageSquare, X, CheckCircle, 
-  AlertCircle, Sparkles, Clock, Calendar, Star, HelpCircle
+  AlertCircle, Sparkles, Clock, Calendar, Star, HelpCircle, BookOpen
 } from 'lucide-react';
 import { fadeInUp, staggerContainer } from '../animations/variants';
 import interviewService from '../services/interviewService';
@@ -347,7 +347,9 @@ export default function SessionHistory() {
                     )}
                   </div>
                   <h2 className="text-xl font-bold text-foreground">
-                    {selectedSession ? selectedSession.title : 'Loading Session Details...'}
+                    {selectedSession 
+                      ? (selectedSession.title || selectedSession.fileName || `${selectedSession.jobRole || selectedSession.role || 'Software Engineer'} Mock Session`)
+                      : 'Loading Session Details...'}
                   </h2>
                 </div>
                 <button 
@@ -375,13 +377,17 @@ export default function SessionHistory() {
                           <h4 className="font-bold text-foreground">Overall Performance</h4>
                         </div>
                         <p className="text-sm text-muted leading-relaxed">
-                          {selectedSession.overallFeedback || 'Your overall mock evaluation is ready below. Great practice session!'}
+                          {selectedSession.overallFeedback || selectedSession.aiFeedback || selectedSession.aiAnalysis || 'Your overall mock evaluation is ready below. Great practice session!'}
                         </p>
                       </div>
                       <div className="bg-card border border-border px-8 py-4 rounded-xl text-center shadow-sm flex-shrink-0 min-w-[120px]">
                         <span className="text-xs text-muted block mb-0.5">Overall Score</span>
                         <span className="text-4xl font-extrabold text-accent">
-                          {selectedSession.overallScore !== null ? `${selectedSession.overallScore}%` : 'N/A'}
+                          {selectedSession.overallScore !== null && selectedSession.overallScore !== undefined
+                            ? `${selectedSession.overallScore}%`
+                            : selectedSession.score !== null && selectedSession.score !== undefined
+                            ? `${selectedSession.score}%`
+                            : 'N/A'}
                         </span>
                       </div>
                     </div>
@@ -389,83 +395,89 @@ export default function SessionHistory() {
                     {/* Questions & Explanations Details */}
                     <div className="space-y-4">
                       <h3 className="font-bold text-md text-foreground border-b border-border pb-2">Questions, Answers & Explanations</h3>
-                      {selectedSession.questions && selectedSession.questions.length > 0 ? (
-                        selectedSession.questions.map((q, idx) => (
-                          <div key={q._id || idx} className="bg-secondary/20 border border-border rounded-xl p-5 space-y-4">
-                            {/* Question Header */}
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="space-y-1">
-                                <span className="text-[10px] font-bold text-muted uppercase">Question {idx + 1}</span>
-                                <h4 className="font-semibold text-foreground leading-relaxed">{q.question}</h4>
+                      {(() => {
+                        const qList = selectedSession.questions?.length > 0 
+                          ? selectedSession.questions 
+                          : selectedSession.generatedQuestions || [];
+                        
+                        if (qList && qList.length > 0) {
+                          return qList.map((q, idx) => (
+                            <div key={q._id || idx} className="bg-secondary/20 border border-border rounded-xl p-5 space-y-4">
+                              {/* Question Header */}
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-bold text-muted uppercase">Question {idx + 1}</span>
+                                  <h4 className="font-semibold text-foreground leading-relaxed">{q.question}</h4>
+                                </div>
+                                <div className="flex gap-2">
+                                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                                    q.type === 'technical' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'
+                                  }`}>{q.type}</span>
+                                  {q.score !== null && (
+                                    <span className="px-2 py-0.5 text-[10px] font-extrabold bg-accent/15 text-accent border border-accent/25 rounded-full">
+                                      Score: {q.score}%
+                                    </span>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex gap-2">
-                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
-                                  q.type === 'technical' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'
-                                }`}>{q.type}</span>
-                                {q.score !== null && (
-                                  <span className="px-2 py-0.5 text-[10px] font-extrabold bg-accent/15 text-accent border border-accent/25 rounded-full">
-                                    Score: {q.score}%
+
+                              {/* Pre-generated Explanation / Correct Answer */}
+                              {q.explanation && (
+                                <div className="bg-card border border-border/80 rounded-lg p-4 space-y-1">
+                                  <span className="text-xs font-bold text-accent flex items-center gap-1.5">
+                                    <BookOpen className="w-3.5 h-3.5" /> Ideal Explanation / Suggested Answer
                                   </span>
-                                )}
-                              </div>
+                                  <p className="text-xs text-muted leading-relaxed">
+                                    {q.explanation}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* User's Answer & Evaluation Feedback */}
+                              {q.answer ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-border pt-4">
+                                  <div className="space-y-1.5">
+                                    <span className="text-xs font-bold text-foreground">Your Submitted Answer:</span>
+                                    <div className="bg-card border border-border rounded p-3 text-xs text-muted max-h-[120px] overflow-y-auto leading-relaxed">
+                                      {q.answer}
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <span className="text-xs font-bold text-foreground flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-accent" /> Evaluation Feedback:</span>
+                                    <div className="bg-card border border-border rounded p-3 text-xs space-y-2">
+                                      <p className="text-muted leading-relaxed italic">"{q.feedback || 'No feedback available.'}"</p>
+                                      
+                                      {/* Strengths & Improvements */}
+                                      {((q.strengths && q.strengths.length > 0) || (q.improvements && q.improvements.length > 0)) && (
+                                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border-light">
+                                          <div>
+                                            <span className="text-[10px] font-bold text-green-700 block">Strengths</span>
+                                            {q.strengths && q.strengths.map((s, i) => (
+                                              <span key={i} className="text-[9px] text-green-600 block mt-0.5 truncate" title={s}>• {s}</span>
+                                            ))}
+                                          </div>
+                                          <div>
+                                            <span className="text-[10px] font-bold text-amber-700 block">Improvements</span>
+                                            {q.improvements && q.improvements.map((s, i) => (
+                                              <span key={i} className="text-[9px] text-amber-600 block mt-0.5 truncate" title={s}>• {s}</span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted border-t border-border pt-3 italic">
+                                  Question was skipped or not answered during the session.
+                                </div>
+                              )}
                             </div>
-
-                            {/* Pre-generated Explanation / Correct Answer */}
-                            {q.explanation && (
-                              <div className="bg-card border border-border/80 rounded-lg p-4 space-y-1">
-                                <span className="text-xs font-bold text-accent flex items-center gap-1.5">
-                                  <BookOpen className="w-3.5 h-3.5" /> Ideal Explanation / Suggested Answer
-                                </span>
-                                <p className="text-xs text-muted leading-relaxed">
-                                  {q.explanation}
-                                </p>
-                              </div>
-                            )}
-
-                            {/* User's Answer & Evaluation Feedback */}
-                            {q.answer ? (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-border pt-4">
-                                <div className="space-y-1.5">
-                                  <span className="text-xs font-bold text-foreground">Your Submitted Answer:</span>
-                                  <div className="bg-card border border-border rounded p-3 text-xs text-muted max-h-[120px] overflow-y-auto leading-relaxed">
-                                    {q.answer}
-                                  </div>
-                                </div>
-                                <div className="space-y-1.5">
-                                  <span className="text-xs font-bold text-foreground flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-accent" /> Evaluation Feedback:</span>
-                                  <div className="bg-card border border-border rounded p-3 text-xs space-y-2">
-                                    <p className="text-muted leading-relaxed italic">"{q.feedback || 'No feedback available.'}"</p>
-                                    
-                                    {/* Strengths & Improvements */}
-                                    {((q.strengths && q.strengths.length > 0) || (q.improvements && q.improvements.length > 0)) && (
-                                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border-light">
-                                        <div>
-                                          <span className="text-[10px] font-bold text-green-700 block">Strengths</span>
-                                          {q.strengths && q.strengths.map((s, i) => (
-                                            <span key={i} className="text-[9px] text-green-600 block mt-0.5 truncate" title={s}>• {s}</span>
-                                          ))}
-                                        </div>
-                                        <div>
-                                          <span className="text-[10px] font-bold text-amber-700 block">Improvements</span>
-                                          {q.improvements && q.improvements.map((s, i) => (
-                                            <span key={i} className="text-[9px] text-amber-600 block mt-0.5 truncate" title={s}>• {s}</span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-xs text-muted border-t border-border pt-3 italic">
-                                Question was skipped or not answered during the session.
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-muted italic">No questions details available for this session.</p>
-                      )}
+                          ));
+                        } else {
+                          return <p className="text-xs text-muted italic">No questions details available for this session.</p>;
+                        }
+                      })()}
                     </div>
                   </>
                 ) : null}

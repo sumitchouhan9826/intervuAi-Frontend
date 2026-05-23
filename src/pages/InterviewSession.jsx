@@ -6,17 +6,10 @@ import { fadeInUp, staggerContainer } from '../animations/variants';
 import toast from 'react-hot-toast';
 import interviewService from '../services/interviewService';
 
-const mockQuestions = [
-  { question: 'Explain the difference between useMemo and useCallback in React. When would you use each?', type: 'technical', difficulty: 'medium', explanation: 'useMemo memoizes the computed value of a function, whereas useCallback memoizes the function definition itself. Use useMemo for heavy calculations, and useCallback when passing callbacks to optimized child components to prevent unnecessary re-renders.' },
-  { question: 'Tell me about a time you had to deal with a difficult team member. How did you handle it?', type: 'behavioral', difficulty: 'medium', explanation: 'A strong behavioral answer should use the STAR method. Describe the Situation, the Task, the Action you took (listening, open communication, finding common ground, setting expectations), and the Result (successful project delivery, improved team dynamics).' },
-  { question: 'How would you design a real-time notification system for a large-scale application?', type: 'system-design', difficulty: 'hard', explanation: 'A scalable real-time notification system requires a clients-to-server connection protocol (WebSockets, SSE), a load balancer, notification servers, a message broker/pub-sub system (like Redis or Kafka), a worker pool to format/push messages, and a database to store notification state.' },
-  { question: 'What is your approach to code reviews? What do you look for?', type: 'technical', difficulty: 'easy', explanation: 'Approach code reviews constructively. Look for readability, code design/architecture, correctness, test coverage, edge cases, potential performance bottlenecks, security flaws, and compliance with team style guides.' },
-  { question: 'Where do you see yourself in 5 years and how does this role fit into that plan?', type: 'hr', difficulty: 'easy', explanation: 'Show ambition and alignment with the company. Frame your growth in terms of technical mastery, leadership responsibility, or deep domain expertise, while explaining how this specific role provides the exact learning and impact opportunity to get there.' },
-];
-
 export default function InterviewSession() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [interview, setInterview] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answer, setAnswer] = useState('');
@@ -33,24 +26,29 @@ export default function InterviewSession() {
   // Fetch interview data on mount
   useEffect(() => {
     const fetchInterview = async () => {
-      if (id === 'session') {
-        setQuestions(mockQuestions);
-        setLoading(false);
+      if (!id || id === 'session') {
+        toast.error('Invalid interview session ID.');
+        navigate('/interview-lab');
         return;
       }
       try {
         setLoading(true);
-        const { data } = await interviewService.getInterview(id);
-        if (data) {
-          if (data.questions && data.questions.length > 0) {
-            setQuestions(data.questions);
+        const response = await interviewService.getInterview(id);
+        console.log('[InterviewSession] Fetch interview API response:', response.data);
+        
+        const fetchedSession = response.data?.interview || response.data?.data || response.data;
+        if (fetchedSession) {
+          setInterview(fetchedSession);
+          const qList = fetchedSession.questions || fetchedSession.generatedQuestions || [];
+          if (qList && qList.length > 0) {
+            setQuestions(qList);
             
             // Set current index to first unanswered question
-            const unansweredIdx = data.questions.findIndex(q => !q.answer);
+            const unansweredIdx = qList.findIndex(q => !q.answer);
             setCurrentIndex(unansweredIdx !== -1 ? unansweredIdx : 0);
             
             // Re-populate submitted answers in state
-            const prevAnswers = data.questions
+            const prevAnswers = qList
               .filter(q => q.answer)
               .map(q => ({
                 question: q.question,
@@ -62,26 +60,28 @@ export default function InterviewSession() {
               }));
             setAnswers(prevAnswers);
 
-            if (data.status === 'completed') {
-              setOverallScore(data.overallScore);
-              setOverallFeedback(data.overallFeedback);
+            if (fetchedSession.status === 'completed') {
+              setOverallScore(fetchedSession.overallScore || fetchedSession.score);
+              setOverallFeedback(fetchedSession.overallFeedback || fetchedSession.aiFeedback);
               setIsComplete(true);
             }
           } else {
-            toast.error('No questions found in this interview. Using mock data.');
-            setQuestions(mockQuestions);
+            toast.error('No questions found in this interview session.');
+            setQuestions([]);
           }
+        } else {
+          toast.error('Failed to load session details.');
         }
       } catch (err) {
         console.error('Fetch interview error:', err);
-        toast.error('Failed to load interview. Using mock session.');
-        setQuestions(mockQuestions);
+        toast.error('Failed to load interview session from the database.');
+        navigate('/interview-lab');
       } finally {
         setLoading(false);
       }
     };
     fetchInterview();
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => {
     if (isComplete) return;
@@ -102,37 +102,26 @@ export default function InterviewSession() {
     if (!answer.trim()) { toast.error('Please write an answer'); return; }
     setIsSubmitting(true);
     
-    if (id === 'session') {
-      // Mock mode
-      await new Promise(r => setTimeout(r, 2000));
-      const mockFeedback = { 
-        score: Math.floor(Math.random() * 30) + 65, 
-        feedback: 'Good answer with relevant technical depth. Consider adding more specific examples from your experience to strengthen your response. Your explanation of core concepts was clear and well-structured.', 
-        strengths: ['Clear explanation', 'Good technical depth'], 
-        improvements: ['Add specific examples', 'Mention edge cases'] 
-      };
-      setFeedback(mockFeedback);
-      setAnswers(prev => [...prev, { question: currentQuestion.question, answer, ...mockFeedback }]);
-      setIsSubmitting(false);
-      return;
-    }
-
     try {
-      const { data } = await interviewService.submitAnswer(id, {
+      const response = await interviewService.submitAnswer(id, {
         questionIndex: currentIndex,
         answer: answer.trim()
       });
+      console.log('[InterviewSession] Submit answer API response:', response.data);
       
-      if (data) {
+      const responseData = response.data?.data || response.data;
+      if (responseData) {
         const resultFeedback = {
-          score: data.score,
-          feedback: data.feedback,
-          strengths: data.strengths || [],
-          improvements: data.improvements || [],
+          score: responseData.score,
+          feedback: responseData.feedback,
+          strengths: responseData.strengths || [],
+          improvements: responseData.improvements || [],
         };
         setFeedback(resultFeedback);
         setAnswers(prev => [...prev, { question: currentQuestion.question, answer, ...resultFeedback }]);
         toast.success('Answer analyzed!');
+      } else {
+        throw new Error('No feedback data returned from server');
       }
     } catch (err) {
       console.error('Submit answer error:', err);
@@ -149,20 +138,21 @@ export default function InterviewSession() {
       setAnswer('');
       setFeedback(null);
     } else {
-      if (id === 'session') {
-        setIsComplete(true);
-        return;
-      }
-      
       // Call backend complete API
       try {
         setLoading(true);
-        const { data } = await interviewService.completeInterview(id);
-        if (data) {
-          setOverallScore(data.interview?.overallScore || data.overallScore);
-          setOverallFeedback(data.interview?.overallFeedback || data.overallFeedback);
+        const response = await interviewService.completeInterview(id);
+        console.log('[InterviewSession] Complete interview API response:', response.data);
+        
+        const responseData = response.data?.data || response.data;
+        if (responseData) {
+          const session = responseData.interview || responseData;
+          setOverallScore(session.overallScore || session.score);
+          setOverallFeedback(session.overallFeedback || session.aiFeedback);
           setIsComplete(true);
           toast.success('Interview session successfully saved and analyzed!');
+        } else {
+          throw new Error('No completion details returned from server');
         }
       } catch (err) {
         console.error('Complete interview error:', err);

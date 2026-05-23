@@ -114,11 +114,19 @@ export default function InterviewLab() {
 
     setLoading(true);
     try {
-      const { data } = await interviewService.generateInterview(payload);
-      setInterview(data);
-      toast.success('Interview generated!');
-      navigate(`/interview/${data._id || data.id || 'session'}`);
+      const response = await interviewService.generateInterview(payload);
+      console.log('[InterviewLab] Generate interview API response:', response.data);
+      
+      const session = response.data?.data || response.data;
+      if (session) {
+        setInterview(session);
+        toast.success('Interview generated!');
+        navigate(`/interview/${session._id || session.id}`);
+      } else {
+        throw new Error('No interview data returned from server');
+      }
     } catch (err) {
+      console.error('[InterviewLab] Generate interview error:', err);
       toast.error(err?.response?.data?.message || 'Failed to generate.');
     } finally {
       setLoading(false);
