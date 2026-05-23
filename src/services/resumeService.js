@@ -9,6 +9,14 @@ export const resumeService = {
     });
   },
 
+  parseResume: (file) => {
+    const formData = new FormData();
+    formData.append('resume', file);
+    return api.post('/resume/parse', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
   analyzeResume: (data) => api.post('/resume/analyze', data),
 
   getAnalyses: () => api.get('/resume/analyses'),

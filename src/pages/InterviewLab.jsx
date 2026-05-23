@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useDropzone } from 'react-dropzone';
 import {
   Users,
   FileText,
@@ -10,10 +11,13 @@ import {
   CheckCircle2,
   Zap,
   Mic,
+  Upload,
+  X,
 } from 'lucide-react';
 import { fadeInUp, staggerContainer } from '@/animations/variants';
 import useInterviewStore from '@/store/useInterviewStore';
 import interviewService from '@/services/interviewService';
+import resumeService from '@/services/resumeService';
 import toast from 'react-hot-toast';
 
 const tabs = [
@@ -35,10 +39,47 @@ export default function InterviewLab() {
   const [jobRole, setJobRole] = useState('');
   const [experience, setExperience] = useState('');
   const [resumeText, setResumeText] = useState('');
+  const [resumeFile, setResumeFile] = useState(null);
+  const [isParsing, setIsParsing] = useState(false);
+  const [isParsed, setIsParsed] = useState(false);
   const [jdText, setJdText] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const setInterview = useInterviewStore((s) => s.setInterview);
+
+  const onDrop = useCallback(async (acceptedFiles) => {
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      setResumeFile(file);
+      setIsParsing(true);
+      setIsParsed(false);
+      setResumeText('');
+      
+      try {
+        const { data } = await resumeService.parseResume(file);
+        if (data && data.text) {
+          setResumeText(data.text);
+          setIsParsed(true);
+          toast.success('Resume parsed successfully!');
+        } else {
+          throw new Error('No text content returned');
+        }
+      } catch (err) {
+        console.error('Parse resume error:', err);
+        toast.error(err?.response?.data?.error || 'Failed to extract text from your resume PDF.');
+        setResumeFile(null);
+      } finally {
+        setIsParsing(false);
+      }
+    }
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { 'application/pdf': ['.pdf'] },
+    maxFiles: 1,
+    multiple: false
+  });
 
   const handleGenerate = async () => {
     let payload = {};
@@ -51,12 +92,24 @@ export default function InterviewLab() {
         experience: parseInt(experience) || 0,
       };
     } else if (activeTab === 'resume') {
-      if (!resumeText.trim()) return toast.error('Please paste your resume.');
-      payload = { type: 'resume', resumeText: resumeText.trim() };
+      if (!resumeFile) return toast.error('Please upload your resume PDF.');
+      if (!isParsed) return toast.error('Please wait for the resume to finish parsing.');
+      if (!jobRole.trim()) return toast.error('Please enter your target job role.');
+      payload = { 
+        type: 'resume', 
+        jobRole: jobRole.trim(),
+        experience: parseInt(experience) || 0,
+        resumeText: resumeText.trim() 
+      };
     } else {
-      if (!jdText.trim())
-        return toast.error('Please paste the job description.');
-      payload = { type: 'jd', jdText: jdText.trim() };
+      if (!jdText.trim()) return toast.error('Please paste the job description.');
+      if (!jobRole.trim()) return toast.error('Please enter your target job role.');
+      payload = { 
+        type: 'jd', 
+        jobRole: jobRole.trim(),
+        experience: parseInt(experience) || 0,
+        jdText: jdText.trim() 
+      };
     }
 
     setLoading(true);
@@ -93,7 +146,7 @@ export default function InterviewLab() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Form Card */}
         <motion.div variants={fadeInUp} className="lg:col-span-2">
-          <div className="bg-white border border-border rounded-xl overflow-hidden">
+          <div className="bg-white border border-border rounded-xl overflow-hidden animate-fade-in">
             {/* Tabs */}
             <div className="flex border-b border-border">
               {tabs.map((tab) => (
@@ -152,33 +205,160 @@ export default function InterviewLab() {
 
               {/* Resume-based Tab */}
               {activeTab === 'resume' && (
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Resume Content
-                  </label>
-                  <textarea
-                    value={resumeText}
-                    onChange={(e) => setResumeText(e.target.value)}
-                    placeholder="Paste your resume text here..."
-                    rows={8}
-                    className="w-full border border-border rounded-lg px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors resize-none"
-                  />
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1.5">
+                        Target Job Role
+                      </label>
+                      <input
+                        type="text"
+                        value={jobRole}
+                        onChange={(e) => setJobRole(e.target.value)}
+                        placeholder="e.g. Senior React Developer"
+                        className="w-full border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1.5">
+                        Experience (Years)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={experience}
+                          onChange={(e) => setExperience(e.target.value)}
+                          placeholder="e.g. 3"
+                          min="0"
+                          max="30"
+                          className="w-full border border-border rounded-lg px-4 py-2.5 pr-16 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-muted font-medium">
+                          Years
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">
+                      Upload Resume PDF
+                    </label>
+                    {!resumeFile ? (
+                      <div
+                        {...getRootProps()}
+                        className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+                          isDragActive
+                            ? 'border-accent bg-accent/5'
+                            : 'border-border hover:border-accent/50 hover:bg-secondary/40'
+                        }`}
+                      >
+                        <input {...getInputProps()} />
+                        <Upload className={`w-8 h-8 mx-auto mb-2 ${isDragActive ? 'text-accent animate-bounce' : 'text-muted'}`} />
+                        <p className="text-sm font-semibold text-foreground">
+                          {isDragActive ? 'Drop your resume here' : 'Drag & drop your resume PDF here'}
+                        </p>
+                        <p className="text-xs text-muted mt-1">
+                          or <span className="text-accent font-medium">browse files</span>
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-2">
+                          PDF files only, up to 10MB
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-secondary/30 border border-border rounded-xl p-4 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 bg-accent/15 rounded-lg flex items-center justify-center">
+                            <FileText className="w-4 h-4 text-accent" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-xs text-foreground truncate max-w-[200px] md:max-w-md">
+                              {resumeFile.name}
+                            </p>
+                            <p className="text-[10px] text-muted mt-0.5 flex items-center gap-2">
+                              <span>{(resumeFile.size / 1024).toFixed(1)} KB</span>
+                              <span>•</span>
+                              {isParsing ? (
+                                <span className="text-accent flex items-center gap-1">
+                                  <svg className="animate-spin h-3 w-3 text-accent" viewBox="0 0 24 24" fill="none">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                                  </svg>
+                                  Parsing text...
+                                </span>
+                              ) : isParsed ? (
+                                <span className="text-success font-medium">Parsed & ready</span>
+                              ) : (
+                                <span className="text-destructive font-medium">Parsing failed</span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setResumeFile(null);
+                            setResumeText('');
+                            setIsParsed(false);
+                          }}
+                          className="p-1.5 hover:bg-secondary rounded-lg text-muted hover:text-foreground transition-colors cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
               {/* JD-based Tab */}
               {activeTab === 'jd' && (
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Job Description
-                  </label>
-                  <textarea
-                    value={jdText}
-                    onChange={(e) => setJdText(e.target.value)}
-                    placeholder="Paste the job description here..."
-                    rows={8}
-                    className="w-full border border-border rounded-lg px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors resize-none"
-                  />
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1.5">
+                        Target Job Role
+                      </label>
+                      <input
+                        type="text"
+                        value={jobRole}
+                        onChange={(e) => setJobRole(e.target.value)}
+                        placeholder="e.g. Senior React Developer"
+                        className="w-full border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1.5">
+                        Experience (Years)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={experience}
+                          onChange={(e) => setExperience(e.target.value)}
+                          placeholder="e.g. 3"
+                          min="0"
+                          max="30"
+                          className="w-full border border-border rounded-lg px-4 py-2.5 pr-16 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-muted font-medium">
+                          Years
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">
+                      Job Description
+                    </label>
+                    <textarea
+                      value={jdText}
+                      onChange={(e) => setJdText(e.target.value)}
+                      placeholder="Paste the job description here..."
+                      rows={6}
+                      className="w-full border border-border rounded-lg px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors resize-none"
+                    />
+                  </div>
                 </div>
               )}
 
